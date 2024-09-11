@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Type, TypeVar
+from typing import Any, Dict, Generic, Optional, Type, TypeVar, Union
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
@@ -11,7 +11,7 @@ from .models import TokenUser
 from .settings import api_settings
 from .tokens import RefreshToken, SlidingToken, Token, UntypedToken
 
-AuthUser = TypeVar("AuthUser", AbstractBaseUser, TokenUser)
+_TokenClass = TypeVar("_TokenClass", bound=Token)
 
 if api_settings.BLACKLIST_AFTER_ROTATION:
     from .token_blacklist.models import BlacklistedToken
@@ -27,9 +27,9 @@ class PasswordField(serializers.CharField):
         super().__init__(*args, **kwargs)
 
 
-class TokenObtainSerializer(serializers.Serializer):
+class TokenObtainSerializer(Generic[_TokenClass], serializers.Serializer):
     username_field = get_user_model().USERNAME_FIELD
-    token_class: Optional[Type[Token]] = None
+    token_class: Optional[Type[_TokenClass]] = None
 
     default_error_messages = {
         "no_active_account": _("No active account found with the given credentials")
@@ -51,7 +51,9 @@ class TokenObtainSerializer(serializers.Serializer):
         except KeyError:
             pass
 
-        self.user = authenticate(**authenticate_kwargs)
+        user = authenticate(**authenticate_kwargs)
+        assert user is not None
+        self.user = user
 
         if not api_settings.USER_AUTHENTICATION_RULE(self.user):
             raise exceptions.AuthenticationFailed(
@@ -62,11 +64,12 @@ class TokenObtainSerializer(serializers.Serializer):
         return {}
 
     @classmethod
-    def get_token(cls, user: AuthUser) -> Token:
-        return cls.token_class.for_user(user)  # type: ignore
+    def get_token(cls, user: Union[AbstractBaseUser, TokenUser]) -> _TokenClass:
+        assert cls.token_class is not None, "`token_class` must be set"
+        return cls.token_class.for_user(user)
 
 
-class TokenObtainPairSerializer(TokenObtainSerializer):
+class TokenObtainPairSerializer(TokenObtainSerializer[RefreshToken]):
     token_class = RefreshToken
 
     def validate(self, attrs: Dict[str, Any]) -> Dict[str, str]:
@@ -83,7 +86,7 @@ class TokenObtainPairSerializer(TokenObtainSerializer):
         return data
 
 
-class TokenObtainSlidingSerializer(TokenObtainSerializer):
+class TokenObtainSlidingSerializer(TokenObtainSerializer[SlidingToken]):
     token_class = SlidingToken
 
     def validate(self, attrs: Dict[str, Any]) -> Dict[str, str]:

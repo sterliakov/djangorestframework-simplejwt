@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timedelta
 from importlib import reload
 from json import JSONEncoder
+from typing import Any
 from unittest import mock
 from unittest.mock import patch
 
@@ -54,7 +55,7 @@ class TestTokenBackend(TestCase):
         self.aud_iss_token_backend = TokenBackend(
             "RS256", PRIVATE_KEY, PUBLIC_KEY, AUDIENCE, ISSUER
         )
-        self.payload = {"foo": "bar"}
+        self.payload: dict[str, Any] = {"foo": "bar"}
         self.backends = (
             self.hmac_token_backend,
             self.rsa_token_backend,

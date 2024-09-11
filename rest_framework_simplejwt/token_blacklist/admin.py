@@ -1,16 +1,16 @@
 from datetime import datetime
-from typing import Any, List, Optional, TypeVar
+from typing import Any, List, Optional, Union
 
 from django.contrib import admin
 from django.contrib.auth.models import AbstractBaseUser
 from django.db.models import QuerySet
+from django.http import HttpRequest
 from django.utils.translation import gettext_lazy as _
-from rest_framework.request import Request
 
 from ..models import TokenUser
 from .models import BlacklistedToken, OutstandingToken
 
-AuthUser = TypeVar("AuthUser", AbstractBaseUser, TokenUser)
+AuthUser = Union[AbstractBaseUser, TokenUser]
 
 
 class OutstandingTokenAdmin(admin.ModelAdmin):
@@ -44,7 +44,7 @@ class OutstandingTokenAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(
-        self, request: Request, obj: Optional[object] = None
+        self, request: HttpRequest, obj: Optional[object] = None
     ) -> bool:
         return request.method in ["GET", "HEAD"] and super().has_change_permission(
             request, obj
@@ -79,13 +79,13 @@ class BlacklistedTokenAdmin(admin.ModelAdmin):
     token_jti.short_description = _("jti")  # type: ignore
     token_jti.admin_order_field = "token__jti"  # type: ignore
 
-    def token_user(self, obj: BlacklistedToken) -> AuthUser:
+    def token_user(self, obj: BlacklistedToken) -> Optional[AuthUser]:
         return obj.token.user
 
     token_user.short_description = _("user")  # type: ignore
     token_user.admin_order_field = "token__user"  # type: ignore
 
-    def token_created_at(self, obj: BlacklistedToken) -> datetime:
+    def token_created_at(self, obj: BlacklistedToken) -> Optional[datetime]:
         return obj.token.created_at
 
     token_created_at.short_description = _("created at")  # type: ignore

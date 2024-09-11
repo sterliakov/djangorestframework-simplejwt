@@ -36,7 +36,7 @@ class APIViewTestCase(TestCase):
         """
         self.client.credentials(HTTP_AUTHORIZATION=f"{type} {token}")
 
-    view_name = None
+    view_name: str | None = None
 
     view_post = client_action_wrapper("post")
     view_get = client_action_wrapper("get")

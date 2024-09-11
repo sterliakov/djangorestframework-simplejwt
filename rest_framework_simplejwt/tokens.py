@@ -1,9 +1,8 @@
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Dict, Generic, Optional, Type, TypeVar
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type, TypeVar, Union
 from uuid import uuid4
 
 from django.conf import settings
-from django.contrib.auth.models import AbstractBaseUser
 from django.utils.module_loading import import_string
 from django.utils.translation import gettext_lazy as _
 
@@ -20,11 +19,13 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
+    from django.contrib.auth.base_user import _UserModel
+
     from .backends import TokenBackend
 
-T = TypeVar("T", bound="Token")
+    AuthUser = Union[_UserModel, TokenUser]
 
-AuthUser = TypeVar("AuthUser", AbstractBaseUser, TokenUser)
+T = TypeVar("T", bound="Token")
 
 
 class Token:
@@ -36,7 +37,7 @@ class Token:
     token_type: Optional[str] = None
     lifetime: Optional[timedelta] = None
 
-    def __init__(self, token: Optional["Token"] = None, verify: bool = True) -> None:
+    def __init__(self, token: Optional[str] = None, verify: bool = True) -> None:
         """
         !!!! IMPORTANT !!!! MUST raise a TokenError with a user-facing error
         message if the given token is invalid, expired, or otherwise not safe
@@ -161,6 +162,9 @@ class Token:
         if lifetime is None:
             lifetime = self.lifetime
 
+        if lifetime is None:
+            raise ValueError("`lifetime` is required without class-level default")
+
         self.payload[claim] = datetime_to_epoch(from_time + lifetime)
 
     def set_iat(self, claim: str = "iat", at_time: Optional[datetime] = None) -> None:
@@ -197,7 +201,7 @@ class Token:
             raise TokenError(format_lazy(_("Token '{}' claim has expired"), claim))
 
     @classmethod
-    def for_user(cls: Type[T], user: AuthUser) -> T:
+    def for_user(cls: Type[T], user: Union[_UserModel, TokenUser]) -> T:
         """
         Returns an authorization token for the given user that will be provided
         after authenticating the user's credentials.
@@ -210,6 +214,8 @@ class Token:
         token[api_settings.USER_ID_CLAIM] = user_id
 
         if api_settings.CHECK_REVOKE_TOKEN:
+            if user.password is None:
+                raise ValueError("User's password is None - unable to check revocation")
             token[api_settings.REVOKE_TOKEN_CLAIM] = get_md5_hash_password(
                 user.password
             )
@@ -231,7 +237,7 @@ class Token:
         return self.token_backend
 
 
-class BlacklistMixin(Generic[T]):
+class BlacklistMixin:
     """
     If the `rest_framework_simplejwt.token_blacklist` app was configured to be
     used, tokens created from `BlacklistMixin` subclasses will insert
@@ -258,7 +264,7 @@ class BlacklistMixin(Generic[T]):
             if BlacklistedToken.objects.filter(token__jti=jti).exists():
                 raise TokenError(_("Token is blacklisted"))
 
-        def blacklist(self) -> BlacklistedToken:
+        def blacklist(self) -> Tuple[BlacklistedToken, bool]:
             """
             Ensures this token is included in the outstanding token list and
             adds it to the blacklist.
@@ -298,7 +304,7 @@ class BlacklistMixin(Generic[T]):
             return token
 
 
-class SlidingToken(BlacklistMixin["SlidingToken"], Token):
+class SlidingToken(BlacklistMixin, Token):
     token_type = "sliding"
     lifetime = api_settings.SLIDING_TOKEN_LIFETIME
 
@@ -319,7 +325,7 @@ class AccessToken(Token):
     lifetime = api_settings.ACCESS_TOKEN_LIFETIME
 
 
-class RefreshToken(BlacklistMixin["RefreshToken"], Token):
+class RefreshToken(BlacklistMixin, Token):
     token_type = "refresh"
     lifetime = api_settings.REFRESH_TOKEN_LIFETIME
     no_copy_claims = (

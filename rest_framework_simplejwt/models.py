@@ -77,17 +77,21 @@ class TokenUser:
         raise NotImplementedError("Token users have no DB representation")
 
     @property
-    def groups(self) -> auth_models.Group:
+    def groups(self) -> EmptyManager[auth_models.Group]:
         return self._groups
 
     @property
-    def user_permissions(self) -> auth_models.Permission:
+    def user_permissions(self) -> EmptyManager[auth_models.Permission]:
         return self._user_permissions
 
-    def get_group_permissions(self, obj: Optional[object] = None) -> set:
+    def get_group_permissions(
+        self, obj: Optional[object] = None
+    ) -> set[auth_models.Permission]:
         return set()
 
-    def get_all_permissions(self, obj: Optional[object] = None) -> set:
+    def get_all_permissions(
+        self, obj: Optional[object] = None
+    ) -> set[auth_models.Permission]:
         return set()
 
     def has_perm(self, perm: str, obj: Optional[object] = None) -> bool:

@@ -1,16 +1,20 @@
-from typing import Optional, Set, Tuple, TypeVar
+from typing import TYPE_CHECKING, Generic, Optional, Set, Tuple, Union
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractBaseUser
 from django.utils.translation import gettext_lazy as _
 from rest_framework import HTTP_HEADER_ENCODING, authentication
 from rest_framework.request import Request
+from typing_extensions import TypeVar
 
 from .exceptions import AuthenticationFailed, InvalidToken, TokenError
 from .models import TokenUser
 from .settings import api_settings
 from .tokens import Token
 from .utils import get_md5_hash_password
+
+if TYPE_CHECKING:
+    from django.contrib.auth.base_user import _UserModel
 
 AUTH_HEADER_TYPES = api_settings.AUTH_HEADER_TYPES
 
@@ -21,23 +25,15 @@ AUTH_HEADER_TYPE_BYTES: Set[bytes] = {
     h.encode(HTTP_HEADER_ENCODING) for h in AUTH_HEADER_TYPES
 }
 
-AuthUser = TypeVar("AuthUser", AbstractBaseUser, TokenUser)
+_U = TypeVar("_U", bound="AbstractBaseUser | TokenUser")
 
 
-class JWTAuthentication(authentication.BaseAuthentication):
-    """
-    An authentication plugin that authenticates requests through a JSON web
-    token provided in a request header.
-    """
-
+class BaseJWTAuthentication(Generic[_U], authentication.BaseAuthentication):
     www_authenticate_realm = "api"
     media_type = "application/json"
+    user_model: type[_U]
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.user_model = get_user_model()
-
-    def authenticate(self, request: Request) -> Optional[Tuple[AuthUser, Token]]:
+    def authenticate(self, request: Request) -> Optional[Tuple[_U, Token]]:
         header = self.get_header(request)
         if header is None:
             return None
@@ -56,7 +52,7 @@ class JWTAuthentication(authentication.BaseAuthentication):
             self.www_authenticate_realm,
         )
 
-    def get_header(self, request: Request) -> bytes:
+    def get_header(self, request: Request) -> Optional[bytes]:
         """
         Extracts the header containing the JSON web token from the given
         request.
@@ -117,7 +113,24 @@ class JWTAuthentication(authentication.BaseAuthentication):
             }
         )
 
-    def get_user(self, validated_token: Token) -> AuthUser:
+    def get_user(self, validated_token: Token) -> _U:
+        """
+        Attempts to find and return a user using the given validated token.
+        """
+        raise NotImplementedError
+
+
+class JWTAuthentication(BaseJWTAuthentication["_UserModel"]):
+    """
+    An authentication plugin that authenticates requests through a JSON web
+    token provided in a request header.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.user_model = get_user_model()
+
+    def get_user(self, validated_token: Token) -> _UserModel:
         """
         Attempts to find and return a user using the given validated token.
         """
@@ -145,13 +158,13 @@ class JWTAuthentication(authentication.BaseAuthentication):
         return user
 
 
-class JWTStatelessUserAuthentication(JWTAuthentication):
+class JWTStatelessUserAuthentication(BaseJWTAuthentication[TokenUser]):
     """
     An authentication plugin that authenticates requests through a JSON web
     token provided in a request header without performing a database lookup to obtain a user instance.
     """
 
-    def get_user(self, validated_token: Token) -> AuthUser:
+    def get_user(self, validated_token: Token) -> TokenUser:
         """
         Returns a stateless user object which is backed by the given validated
         token.
@@ -167,7 +180,7 @@ class JWTStatelessUserAuthentication(JWTAuthentication):
 JWTTokenUserAuthentication = JWTStatelessUserAuthentication
 
 
-def default_user_authentication_rule(user: AuthUser) -> bool:
+def default_user_authentication_rule(user: Union[AbstractBaseUser, TokenUser]) -> bool:
     # Prior to Django 1.10, inactive users could be authenticated with the
     # default `ModelBackend`.  As of Django 1.10, the `ModelBackend`
     # prevents inactive users from authenticating.  App designers can still

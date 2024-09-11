@@ -8,7 +8,6 @@ from django.utils.translation import gettext_lazy as _
 from jwt import InvalidAlgorithmError, InvalidTokenError, algorithms
 
 from .exceptions import TokenBackendError
-from .tokens import Token
 from .utils import format_lazy
 
 try:
@@ -37,7 +36,7 @@ class TokenBackend:
         algorithm: str,
         signing_key: Optional[str] = None,
         verifying_key: str = "",
-        audience: Union[str, Iterable, None] = None,
+        audience: Union[str, Iterable[str], None] = None,
         issuer: Optional[str] = None,
         jwk_url: Optional[str] = None,
         leeway: Union[float, int, timedelta, None] = None,
@@ -93,7 +92,7 @@ class TokenBackend:
                 )
             )
 
-    def get_verifying_key(self, token: Token) -> Optional[str]:
+    def get_verifying_key(self, token: str) -> Optional[str]:
         if self.algorithm.startswith("HS"):
             return self.signing_key
 
@@ -121,13 +120,13 @@ class TokenBackend:
             algorithm=self.algorithm,
             json_encoder=self.json_encoder,
         )
-        if isinstance(token, bytes):
+        if isinstance(token, bytes):  # type: ignore[unreachable]
             # For PyJWT <= 1.7.1
-            return token.decode("utf-8")
+            return token.decode("utf-8")  # type: ignore[unreachable]
         # For PyJWT >= 2.0.0a1
         return token
 
-    def decode(self, token: Token, verify: bool = True) -> Dict[str, Any]:
+    def decode(self, token: str, verify: bool = True) -> Dict[str, Any]:
         """
         Performs a validation of the given token and returns its payload
         dictionary.
